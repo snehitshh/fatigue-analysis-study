@@ -29,11 +29,11 @@ function mountFittsTest(container, onComplete) {
     let trialSequence = [];
 
 const LEVELS = {
-    1: { size: 55, speed: 0.6, distance: 100 }, // Very Easy
-    2: { size: 45, speed: 0.8, distance: 150 }, // Easy
-    3: { size: 35, speed: 1.0, distance: 200 }, // Medium
-    4: { size: 30, speed: 1.2, distance: 230 }, // Hard
-    5: { size: 32, speed: 1.4, distance: 260 }  // Extreme 
+    1: { size: 50, speed: 0.5, distance: 100 }, // Very Easy
+    2: { size: 45, speed: 0.7, distance: 150 }, // Easy
+    3: { size: 35, speed: 0.9, distance: 200 }, // Medium
+    4: { size: 30, speed: 1.1, distance: 230 }, // Hard
+    5: { size: 34, speed: 1.3, distance: 260 }  // Extreme 
 };
 
     // Trial state variables
@@ -387,15 +387,31 @@ const LEVELS = {
         setTimeout(() => nextTrial(), 150);
     }
 
-    function recordTrial(success, time) {
-        const ID = Math.log2((currentTrial.targetDistance / currentTrial.targetSize) + 1);
-        trialData.push({
-            participantId, block: currentBlock, trial: trialIdx + 1,
-            targetSize: currentTrial.targetSize, targetDistance: currentTrial.targetDistance,
-            indexOfDifficulty: ID, totalTime: time, misclicks: misclickCount, success,
-            timestamp: Date.now()
-        });
-    }
+function recordTrial(success, time) {
+    const ID = Math.log2((currentTrial.targetDistance / currentTrial.targetSize) + 1);
+    
+    // Round to 4 decimal places for scientific precision without the "mess"
+    const throughput = (ID / (time / 1000)).toFixed(4);
+
+    trialData.push({
+        participantId: participantId,
+        timestamp: Date.now(),
+        block: currentBlock,
+        trialInBlock: trialIdx + 1,
+        difficultyLevel: currentTrial.level,
+        targetSize: currentTrial.targetSize,
+        targetDistance: currentTrial.targetDistance,
+        targetSpeed: currentTrial.targetSpeed,
+        indexOfDifficulty: ID.toFixed(4),
+        totalTime_ms: time.toFixed(2),
+        throughput_bps: throughput,
+        misclicks: misclickCount,
+        success: success,
+        blueClickTime_ms: (blueClickTime - trialStartTime).toFixed(2),
+        // Clean up the intervals to 2 decimal places
+        greenClickIntervals: greenClickTimes.map(t => t.toFixed(2)).join('|') 
+    });
+}
 
     function endTest() {
         animationActive = false;
