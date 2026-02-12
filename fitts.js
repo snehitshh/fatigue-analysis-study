@@ -28,6 +28,14 @@ function mountFittsTest(container, onComplete) {
     let globalTimer = null;
     let trialSequence = [];
 
+const LEVELS = {
+    1: { size: 55, speed: 0.6, distance: 100 }, // Very Easy
+    2: { size: 45, speed: 0.8, distance: 150 }, // Easy
+    3: { size: 35, speed: 1.0, distance: 200 }, // Medium
+    4: { size: 30, speed: 1.2, distance: 230 }, // Hard
+    5: { size: 32, speed: 1.4, distance: 260 }  // Extreme 
+};
+
     // Trial state variables
     let blueClicked = false;
     let greenTargetsClicked = 0;
@@ -218,17 +226,14 @@ function mountFittsTest(container, onComplete) {
         animateTargets();
     }
 
-    function initializeTrial() {
+ function initializeTrial() {
     const arena = document.getElementById('fitts-arena');
     if (!arena) return;
 
-    // Use the constants you defined (700x500) to ensure targets stay in bounds
-    const arenaWidth = ARENA_W; 
-    const arenaHeight = ARENA_H;
-    const centerX = arenaWidth / 2;
-    const centerY = arenaHeight / 2;
+    // Pick a random level for this set
+    const randomLevel = Math.floor(Math.random() * 5) + 1;
+    const config = LEVELS[randomLevel];
 
-    const params = trialSequence[trialIdx % trialSequence.length];
     trialActive = true;
     blueClicked = false;
     greenTargetsClicked = 0;
@@ -237,39 +242,40 @@ function mountFittsTest(container, onComplete) {
     greenClickTimes = [];
     pauseAccum = 0;
 
-    // Blue Target: Start in center
-    const blueTarget = { 
-        x: centerX, 
-        y: centerY, 
-        vx: (Math.random() - 0.5) * MOVE_SPEED * 2, 
-        vy: (Math.random() - 0.5) * MOVE_SPEED * 2, 
-        element: null 
+    // Use config values for speed and size
+    currentTrial = {
+        level: randomLevel,
+        targetSize: config.size,
+        targetDistance: config.distance,
+        blueTarget: { 
+            x: ARENA_W / 2, 
+            y: ARENA_H / 2, 
+            vx: (Math.random() - 0.5) * config.speed * 4, 
+            vy: (Math.random() - 0.5) * config.speed * 4, 
+            element: null 
+        },
+        greenTargets: [],
+        arenaWidth: ARENA_W,
+        arenaHeight: ARENA_H
     };
 
-    const greenTargets = [];
     for (let i = 0; i < 3; i++) {
         const angle = (i * 120 + Math.random() * 60 - 30) * Math.PI / 180;
-        
-        // Calculate initial positions
-        let tx = centerX + Math.cos(angle) * params.targetDistance;
-        let ty = centerY + Math.sin(angle) * params.targetDistance;
+        let tx = (ARENA_W / 2) + Math.cos(angle) * config.distance;
+        let ty = (ARENA_H / 2) + Math.sin(angle) * config.distance;
 
-        // NEW: Clamping logic to keep them inside the frame
-        tx = Math.max(params.targetRadius, Math.min(arenaWidth - params.targetRadius, tx));
-        ty = Math.max(params.targetRadius, Math.min(arenaHeight - params.targetRadius, ty));
+        // Clamp inside bounds
+        tx = Math.max(config.size/2, Math.min(ARENA_W - config.size/2, tx));
+        ty = Math.max(config.size/2, Math.min(ARENA_H - config.size/2, ty));
 
-        greenTargets.push({
-            x: tx,
-            y: ty,
-            vx: (Math.random() - 0.5) * MOVE_SPEED * 2,
-            vy: (Math.random() - 0.5) * MOVE_SPEED * 2,
-            radius: params.targetRadius,
-            clicked: false,
-            element: null
+        currentTrial.greenTargets.push({
+            x: tx, y: ty,
+            vx: (Math.random() - 0.5) * config.speed * 4,
+            vy: (Math.random() - 0.5) * config.speed * 4,
+            radius: config.size / 2,
+            clicked: false, element: null
         });
     }
-
-    currentTrial = { blueTarget, greenTargets, arenaWidth, arenaHeight, ...params };
     createTargetElements();
 }
 
