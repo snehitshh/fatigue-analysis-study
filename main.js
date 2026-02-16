@@ -22,40 +22,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ----- Progress Updates -----
 function updateProgress() {
-    let totalSteps = 1 + (TOTAL_BLOCKS * 5); // demographics + (fitts + nasatlx + break + test-selection + cognitive/physical) * 3
-    let currentStepNum = 1; // demographics
-    
-    if (currentStep !== 'demographics') {
-        currentStepNum = 1 + ((currentBlock - 1) * 5);
-        if (currentStep === 'nasatlx') currentStepNum += 1;
-        else if (currentStep === 'break') currentStepNum += 2;
-        else if (currentStep === 'test-selection') currentStepNum += 3;
-        else if (currentStep === 'cognitive' || currentStep === 'physical') currentStepNum += 4;
-        else if (currentStep === 'complete') currentStepNum = totalSteps;
-    }
-    
-    let progressText = '';
-    if (currentStep === 'demographics') {
-        progressText = 'Demographics Form';
-    } else if (currentStep === 'complete') {
-        progressText = 'Session Complete';
-    } else {
-        progressText = `Block ${currentBlock} - ${getStepDisplayName(currentStep)}`;
-    }
-    
-    progressBar.textContent = `${progressText} (${currentStepNum}/${totalSteps})`;
+    // This removes the (1/16) and keeps it clean for your blocks
+    progressBar.textContent = `Block ${currentBlock}/${TOTAL_BLOCKS} - ${getStepDisplayName(currentStep)}`;
 }
 
 function getStepDisplayName(step) {
     const names = {
-        'fitts': 'Moving Targets Test',
-        'nasatlx': 'NASA-TLX Questionnaire',
-        'break': 'Break Period',
-        'test-selection': 'Test Selection',
-        'cognitive': 'Cognitive Test',
-        'physical': 'Physical Fatigue Test'
+        'fitts': 'Circular Tapping Test',
+        'nasatlx': 'NASA-TLX Assessment',
+        'break': 'Rest Period',
+        'cognitive': 'Cognitive Test'
     };
     return names[step] || step;
+}
+
+// Update this to remove the (1/16) math
+function updateProgress() {
+    progressBar.textContent = `Block ${currentBlock}/${TOTAL_BLOCKS} - ${getStepDisplayName(currentStep)}`;
 }
 
 // ----- Step Navigation -----
@@ -71,13 +54,19 @@ function onDemographicsComplete(data) {
 }
 
 function startBlock(blockNum) {
-    currentBlock = blockNum;
-    sessionData.blocks[blockNum - 1] = {
-        blockNumber: blockNum,
+    if (blockNum > TOTAL_BLOCKS) {
+        showCompletion();
+        return;
+    }
+
+    currentBlock = blockNum; // Now it correctly moves to 2, then 3
+    
+    sessionData.blocks[currentBlock - 1] = {
+        blockNumber: currentBlock,
         startTime: new Date().toISOString(),
         fittsData: null,
         nasatlxData: null,
-        testType: null, // 'cognitive' or 'physical'
+        testType: null,
         cognitiveData: null,
         physicalData: null
     };
@@ -92,14 +81,23 @@ function showFittsTest() {
 }
 
 function onFittsComplete(data) {
+    // Save the Fitts data for this block
     sessionData.blocks[currentBlock - 1].fittsData = data;
+    
+    // Immediately move to NASA-TLX
     showNASATLX();
 }
 
 function showNASATLX() {
     currentStep = 'nasatlx';
     updateProgress();
-    mountNASATLX(mainContent, onNASATLXComplete);
+    
+    // Ensure the function name matches exactly what is in your nasatlx.js
+    if (typeof mountNASATLX === "function") {
+        mountNASATLX(mainContent, onNASATLXComplete);
+    } else {
+        console.error("mountNASATLX function not found! Check nasatlx.js loading.");
+    }
 }
 
 function onNASATLXComplete(data) {
@@ -399,11 +397,13 @@ function showPhysicalFatigueTest() {
 }
 
 function showInterBlockScreen() {
+    // currentBlock is currently 1 if we just finished block 1
     mainContent.innerHTML = `
         <div class="completion-container">
             <div class="block-title">Block ${currentBlock} Complete</div>
-            <p>You have completed block ${currentBlock} of ${TOTAL_BLOCKS}.</p>
-            <p>When you're ready, click the button below to start block ${currentBlock + 1}.</p>
+            <p>You have finished block ${currentBlock} of ${TOTAL_BLOCKS}.</p>
+            <p>Ready to start the next set?</p>
+            
             <button class="button primary" onclick="startBlock(${currentBlock + 1})">
                 Start Block ${currentBlock + 1}
             </button>
