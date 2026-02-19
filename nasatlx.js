@@ -67,85 +67,38 @@ function mountNASATLX(container, onComplete) {
         </div>
     `;
 
-    // Add CSS for warning styles if not already present
+    // Internal CSS helper to ensure warnings look right
     if (!window.__nasatlxWarningCSS) {
         const style = document.createElement('style');
         style.textContent = `
-            .nasatlx-warning {
-                background: #fef2f2;
-                border: 2px solid #fca5a5;
-                border-radius: 8px;
-                padding: 1em;
-                margin: 1em 0;
-                color: #dc2626;
-                font-weight: 600;
-                text-align: center;
-            }
-            
-            .input-warning {
-                color: #dc2626;
-                font-size: 0.9em;
-                font-weight: 500;
-                margin-top: 0.5em;
-                padding: 0.3em 0.5em;
-                background: #fef2f2;
-                border-radius: 4px;
-                border-left: 3px solid #dc2626;
-            }
-            
-            .nasatlx-input.invalid {
-                border-color: #dc2626;
-                background-color: #fef2f2;
-            }
-            
-            .nasatlx-input.valid {
-                border-color: #16a34a;
-                background-color: #f0fdf4;
-            }
+            .nasatlx-warning { background: #fef2f2; border: 2px solid #fca5a5; border-radius: 8px; padding: 1em; margin: 1em 0; color: #dc2626; font-weight: 600; text-align: center; }
+            .input-warning { color: #dc2626; font-size: 0.9em; font-weight: 500; margin-top: 0.5em; padding: 0.3em 0.5em; background: #fef2f2; border-radius: 4px; border-left: 3px solid #dc2626; }
+            .nasatlx-input.invalid { border-color: #dc2626; background-color: #fef2f2; }
+            .nasatlx-input.valid { border-color: #16a34a; background-color: #f0fdf4; }
         `;
         document.head.appendChild(style);
         window.__nasatlxWarningCSS = true;
     }
 
-    // Set up real-time validation
     const inputs = container.querySelectorAll('.nasatlx-input');
     const warningDiv = document.getElementById('nasatlx-warning');
     const submitBtn = document.getElementById('submit-btn');
-    
-    inputs.forEach(input => {
-        input.addEventListener('input', function() {
-            validateInput(this);
-            updateGlobalWarning();
-            updateSubmitButton();
-        });
-        
-        input.addEventListener('blur', function() {
-            validateInput(this);
-            updateGlobalWarning();
-            updateSubmitButton();
-        });
-    });
+    const form = document.getElementById('nasatlx-form');
 
     function validateInput(input) {
         const value = parseFloat(input.value);
         const questionId = input.dataset.questionId;
         const warningElement = document.getElementById(`warning-${questionId}`);
-        
         if (input.value === '') {
-            // Empty input - hide warning but don't mark as valid
             input.classList.remove('invalid', 'valid');
             warningElement.style.display = 'none';
             return false;
         }
-        
         if (isNaN(value) || value < 1 || value > 20) {
-            // Invalid input - show warning
             input.classList.add('invalid');
-            input.classList.remove('valid');
             warningElement.style.display = 'block';
             return false;
         } else {
-            // Valid input - hide warning and mark as valid
             input.classList.remove('invalid');
             input.classList.add('valid');
             warningElement.style.display = 'none';
@@ -153,78 +106,61 @@ function mountNASATLX(container, onComplete) {
         }
     }
 
-    function updateGlobalWarning() {
-        const hasInvalidInputs = Array.from(inputs).some(input => {
-            const value = parseFloat(input.value);
-            return input.value !== '' && (isNaN(value) || value < 1 || value > 20);
-        });
-        
-        if (hasInvalidInputs) {
-            warningDiv.style.display = 'block';
-        } else {
-            warningDiv.style.display = 'none';
-        }
-    }
-
     function updateSubmitButton() {
         const allValid = Array.from(inputs).every(input => {
-            if (input.value === '') return false; // Required field is empty
             const value = parseFloat(input.value);
-            return !isNaN(value) && value >= 1 && value <= 20;
+            return input.value !== '' && !isNaN(value) && value >= 1 && value <= 20;
         });
-        
-        if (allValid) {
-            submitBtn.disabled = false;
-            submitBtn.style.opacity = '1';
-            submitBtn.style.cursor = 'pointer';
-        } else {
-            submitBtn.disabled = true;
-            submitBtn.style.opacity = '0.6';
-            submitBtn.style.cursor = 'not-allowed';
-        }
+        submitBtn.disabled = !allValid;
+        submitBtn.style.opacity = allValid ? '1' : '0.6';
     }
 
-    // Initial state - disable submit button
-    updateSubmitButton();
-    
-    const form = document.getElementById('nasatlx-form');
+    inputs.forEach(input => {
+        input.addEventListener('input', () => { validateInput(input); updateSubmitButton(); });
+    });
+
+    // Individual CSV Download function
+    function downloadNASACSV(data) {
+        const headers = Object.keys(data).join(",");
+        const values = Object.values(data).join(",");
+        const csvContent = headers + "\n" + values;
+        
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `nasatlx_report_${new Date().getTime()}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         
-        // Final validation before submission
         let allValid = true;
         const responses = {};
         let totalScore = 0;
-        let count = 0;
         
-        for (let input of inputs) {
+        inputs.forEach(input => {
             if (!validateInput(input)) {
                 allValid = false;
             } else {
                 const value = parseInt(input.value);
                 responses[input.name] = value;
                 totalScore += value;
-                count++;
             }
-        }
-        
-        updateGlobalWarning();
-        
-        if (!allValid) {
-            // Show error message and prevent submission
-            warningDiv.style.display = 'block';
-            warningDiv.innerHTML = '<strong>⚠️ Error:</strong> Please correct the highlighted fields before submitting.';
-            return;
-        }
-        
-        if (count < questions.length) {
-            // Not all fields completed
-            warningDiv.style.display = 'block';
-            warningDiv.innerHTML = '<strong>⚠️ Error:</strong> Please complete all fields before submitting.';
-            return;
-        }
-        
-        responses.overallScore = totalScore / count;
+        });
+
+        if (!allValid) return;
+
+        responses.overallScore = (totalScore / questions.length).toFixed(2);
+        responses.timestamp = new Date().toISOString();
+
+        // Trigger immediate download before proceeding
+        downloadNASACSV(responses);
+
+        // Move to the next step in main.js
         onComplete(responses);
     });
 }

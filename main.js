@@ -1,8 +1,9 @@
+// Global Configuration
 const TOTAL_BLOCKS = 3;
-const BREAK_DURATION = 120; // 2 minutes in seconds
-const PHYSICAL_FATIGUE_DURATION = 600; // 10 minutes in seconds
+const BREAK_DURATION = 120; // 2 minutes
+const PHYSICAL_FATIGUE_DURATION = 720; // 12 minutes (synced with cognitive)
 
-let currentStep = 'demographics'; // demographics, fitts, nasatlx, break, test-selection, cognitive/physical, complete
+let currentStep = 'demographics'; 
 let currentBlock = 1;
 let sessionData = {
     demographics: {},
@@ -14,43 +15,30 @@ let sessionData = {
 const mainContent = document.getElementById('main-content');
 const progressBar = document.getElementById('progress-bar');
 
-// Initialize application
 document.addEventListener('DOMContentLoaded', function() {
     sessionData.startTime = new Date().toISOString();
     showDemographics();
 });
 
-// ----- Progress Updates -----
 function updateProgress() {
-    // This removes the (1/16) and keeps it clean for your blocks
-    progressBar.textContent = `Block ${currentBlock}/${TOTAL_BLOCKS} - ${getStepDisplayName(currentStep)}`;
-}
-
-function getStepDisplayName(step) {
-    const names = {
+    const stepName = {
         'fitts': 'Circular Tapping Test',
         'nasatlx': 'NASA-TLX Assessment',
         'break': 'Rest Period',
-        'cognitive': 'Cognitive Test'
-    };
-    return names[step] || step;
+        'cognitive': 'Cognitive Battery',
+        'physical': 'Physical Fatigue'
+    }[currentStep] || currentStep;
+    
+    progressBar.textContent = `Block ${currentBlock}/${TOTAL_BLOCKS} - ${stepName}`;
 }
 
-// Update this to remove the (1/16) math
-function updateProgress() {
-    progressBar.textContent = `Block ${currentBlock}/${TOTAL_BLOCKS} - ${getStepDisplayName(currentStep)}`;
-}
-
-// ----- Step Navigation -----
 function showDemographics() {
     currentStep = 'demographics';
     updateProgress();
-    mountDemographicsForm(mainContent, onDemographicsComplete);
-}
-
-function onDemographicsComplete(data) {
-    sessionData.demographics = data;
-    startBlock(1);
+    mountDemographicsForm(mainContent, (data) => {
+        sessionData.demographics = data;
+        startBlock(1);
+    });
 }
 
 function startBlock(blockNum) {
@@ -58,466 +46,114 @@ function startBlock(blockNum) {
         showCompletion();
         return;
     }
-
-    currentBlock = blockNum; // Now it correctly moves to 2, then 3
-    
+    currentBlock = blockNum; 
     sessionData.blocks[currentBlock - 1] = {
         blockNumber: currentBlock,
-        startTime: new Date().toISOString(),
-        fittsData: null,
-        nasatlxData: null,
-        testType: null,
-        cognitiveData: null,
-        physicalData: null
+        startTime: new Date().toISOString()
     };
-    
     showFittsTest();
 }
 
 function showFittsTest() {
     currentStep = 'fitts';
     updateProgress();
+    // Passing the block index helps fitts.js log correctly
     mountFittsTest(mainContent, onFittsComplete);
 }
 
 function onFittsComplete(data) {
-    // Save the Fitts data for this block
     sessionData.blocks[currentBlock - 1].fittsData = data;
-    
-    // Immediately move to NASA-TLX
     showNASATLX();
 }
 
 function showNASATLX() {
     currentStep = 'nasatlx';
     updateProgress();
-    
-    // Ensure the function name matches exactly what is in your nasatlx.js
-    if (typeof mountNASATLX === "function") {
-        mountNASATLX(mainContent, onNASATLXComplete);
-    } else {
-        console.error("mountNASATLX function not found! Check nasatlx.js loading.");
-    }
-}
-
-function onNASATLXComplete(data) {
-    sessionData.blocks[currentBlock - 1].nasatlxData = data;
-    showBreak();
+    mountNASATLX(mainContent, (data) => {
+        sessionData.blocks[currentBlock - 1].nasatlxData = data;
+        showBreak();
+    });
 }
 
 function showBreak() {
     currentStep = 'break';
     updateProgress();
-    showBreakScreen();
-}
-
-function showBreakScreen() {
     let timeRemaining = BREAK_DURATION;
-    let breakInterval = null;
-    let breakSkipped = false;
     
-    function updateBreakDisplay() {
-        if (breakSkipped) return; // Don't update if break was skipped
-        
-        const minutes = Math.floor(timeRemaining / 60);
-        const seconds = timeRemaining % 60;
-        const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
+    const renderBreak = () => {
+        const mins = Math.floor(timeRemaining / 60);
+        const secs = timeRemaining % 60;
         mainContent.innerHTML = `
             <div class="break-container">
-                <div class="block-title">Break Period - Block ${currentBlock}</div>
-                <div class="break-message">
-                    <p>Please take a break before continuing to the next test.</p>
-                    <div class="break-timer">${timeStr}</div>
-                    <p class="break-instruction">Relax and rest your eyes. The test will continue automatically when the timer reaches zero.</p>
-                </div>
-                <div class="break-controls">
-                    <button class="button primary" onclick="skipBreak()">Skip Break & Continue</button>
-                    <p class="skip-note">You can skip the break if you feel ready to continue immediately.</p>
-                </div>
-            </div>
-        `;
-    }
-    
-    // Set up skip break function
-    window.skipBreak = function() {
-        if (breakSkipped) return; // Prevent multiple calls
-        
-        breakSkipped = true;
-        
-        if (breakInterval) {
-            clearInterval(breakInterval);
-            breakInterval = null;
-        }
-        
-        // Show confirmation message briefly before proceeding
-        mainContent.innerHTML = `
-            <div class="break-container">
-                <div class="block-title">Break Skipped</div>
-                <div class="break-message">
-                    <p>✓ Break skipped. Proceeding to test selection...</p>
-                </div>
-            </div>
-        `;
-        
-        setTimeout(() => {
-            showTestSelection();
-        }, 1000);
+                <div class="block-title">Rest Period (${mins}:${secs.toString().padStart(2, '0')})</div>
+                <p>Take a break before the next test phase.</p>
+                <button class="button primary" onclick="skipBreak()">Skip Break</button>
+            </div>`;
     };
-    
-    // Initial display
-    updateBreakDisplay();
-    
-    // Start countdown
-    breakInterval = setInterval(() => {
-        if (breakSkipped) {
-            clearInterval(breakInterval);
-            return;
-        }
-        
+
+    const interval = setInterval(() => {
         timeRemaining--;
-        updateBreakDisplay();
-        
-        if (timeRemaining <= 0) {
-            clearInterval(breakInterval);
-            breakInterval = null;
-            
-            if (!breakSkipped) {
-                showTestSelection();
-            }
-        }
+        if (timeRemaining <= 0) { clearInterval(interval); showTestSelection(); }
+        else renderBreak();
     }, 1000);
+
+    window.skipBreak = () => { clearInterval(interval); showTestSelection(); };
+    renderBreak();
 }
 
 function showTestSelection() {
     currentStep = 'test-selection';
     updateProgress();
-    
     mainContent.innerHTML = `
         <div class="test-selection-container">
-            <div class="block-title">Choose Your Next Test - Block ${currentBlock}</div>
-            <p class="selection-instruction">Please select which test you would like to complete:</p>
-            
+            <div class="block-title">Choose Your Next Test</div>
             <div class="test-options">
-                <div class="test-option">
-                    <div class="test-card cognitive-card">
-                        <h3>Cognitive Test</h3>
-                        <p>Complete Stroop and N-back cognitive tasks</p>
-                        <ul>
-                            <li>Tests attention and working memory</li>
-                            <li>Takes approximately 3-4 minutes</li>
-                            <li>Involves color recognition and memory tasks</li>
-                        </ul>
-                        <button class="button primary" onclick="selectCognitiveTest()">
-                            Start Cognitive Test
-                        </button>
-                    </div>
+                <div class="test-card">
+                    <h3>Cognitive Battery</h3>
+                    <p>12-minute Stroop and AX-CPT session.</p>
+                    <button class="button primary" onclick="selectTest('cognitive')">Start Cognitive</button>
                 </div>
-                
-                <div class="test-option">
-                    <div class="test-card physical-card">
-                        <h3>Physical Fatigue Test</h3>
-                        <p>Complete physical exercise for 10 minutes</p>
-                        <ul>
-                            <li>10-minute timer with start/stop controls</li>
-                            <li>You control when to finish the exercise</li>
-                            <li>Designed to induce physical fatigue</li>
-                        </ul>
-                        <button class="button primary" onclick="selectPhysicalTest()">
-                            Start Physical Fatigue Test
-                        </button>
-                    </div>
+                <div class="test-card">
+                    <h3>Physical Fatigue</h3>
+                    <p>12-minute physical exercise task.</p>
+                    <button class="button primary" onclick="selectTest('physical')">Start Physical</button>
                 </div>
             </div>
-        </div>
-    `;
+        </div>`;
     
-    window.selectCognitiveTest = function() {
-        sessionData.blocks[currentBlock - 1].testType = 'cognitive';
-        showCognitiveTest();
-    };
-    
-    window.selectPhysicalTest = function() {
-        sessionData.blocks[currentBlock - 1].testType = 'physical';
-        showPhysicalFatigueTest();
+    window.selectTest = (type) => {
+        sessionData.blocks[currentBlock - 1].testType = type;
+        type === 'cognitive' ? showCognitiveTest() : showPhysicalFatigueTest();
     };
 }
 
 function showCognitiveTest() {
     currentStep = 'cognitive';
     updateProgress();
-    mountCognitiveTest(mainContent, onCognitiveComplete, currentBlock);
+    mountCognitiveTest(mainContent, (data) => {
+        sessionData.blocks[currentBlock - 1].cognitiveData = data;
+        finishBlock();
+    }, currentBlock);
 }
 
-function onCognitiveComplete(data) {
-    sessionData.blocks[currentBlock - 1].cognitiveData = data;
-    sessionData.blocks[currentBlock - 1].endTime = new Date().toISOString();
-    
+function finishBlock() {
     if (currentBlock < TOTAL_BLOCKS) {
-        showInterBlockScreen();
+        mainContent.innerHTML = `
+            <div class="completion-container">
+                <h3>Block ${currentBlock} Complete</h3>
+                <button class="button primary" onclick="startBlock(${currentBlock + 1})">Next Block</button>
+            </div>`;
     } else {
         showCompletion();
     }
 }
 
-function showPhysicalFatigueTest() {
-    currentStep = 'physical';
-    updateProgress();
-    
-    let timeRemaining = PHYSICAL_FATIGUE_DURATION;
-    let timerInterval = null;
-    let timerRunning = false;
-    let testStartTime = null;
-    
-    function updateDisplay() {
-        const minutes = Math.floor(timeRemaining / 60);
-        const seconds = timeRemaining % 60;
-        const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
-        mainContent.innerHTML = `
-            <div class="physical-test-container">
-                <div class="block-title">Physical Fatigue Test - Block ${currentBlock}</div>
-                <div class="physical-test-content">
-                    <div class="timer-section">
-                        <h3>Exercise Timer</h3>
-                        <div class="timer-display">
-                            <div class="main-timer">${timeStr}</div>
-                            <div class="timer-label">Time Remaining</div>
-                        </div>
-                    </div>
-                    
-                    <div class="timer-controls">
-                        ${!timerRunning ? 
-                            '<button class="button primary timer-btn" onclick="startTimer()">Start Exercise</button>' :
-                            '<button class="button secondary timer-btn" onclick="stopTimer()">Pause Exercise</button>'
-                        }
-                        <button class="button" onclick="finishPhysicalTest()" style="background: #dc2626; border-color: #dc2626;">
-                            Finished Physical Fatigue Exercise
-                        </button>
-                    </div>
-                    
-                    <div class="exercise-instructions">
-                        <h4>Exercise Instructions:</h4>
-                        <ul>
-                            <li>Perform physical exercises of your choice (jumping jacks, push-ups, running in place, etc.)</li>
-                            <li>Use the Start/Pause button to control the timer</li>
-                            <li>Exercise for up to 10 minutes or until you feel adequately fatigued</li>
-                            <li>Click "Finished Physical Fatigue Exercise" when you're done</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-    
-    window.startTimer = function() {
-        if (!timerRunning) {
-            timerRunning = true;
-            if (!testStartTime) {
-                testStartTime = performance.now();
-            }
-            
-            timerInterval = setInterval(() => {
-                timeRemaining = Math.max(0, timeRemaining - 1);
-                updateDisplay();
-                
-                if (timeRemaining <= 0) {
-                    clearInterval(timerInterval);
-                    timerRunning = false;
-                    finishPhysicalTest();
-                }
-            }, 1000);
-            
-            updateDisplay();
-        }
-    };
-    
-    window.stopTimer = function() {
-        if (timerRunning && timerInterval) {
-            clearInterval(timerInterval);
-            timerRunning = false;
-            updateDisplay();
-        }
-    };
-    
-    window.finishPhysicalTest = function() {
-        if (timerInterval) {
-            clearInterval(timerInterval);
-        }
-        
-        const totalTestTime = testStartTime ? (performance.now() - testStartTime) / 1000 : 0;
-        const timeUsed = PHYSICAL_FATIGUE_DURATION - timeRemaining;
-        
-        // Record physical test data
-        const physicalData = {
-            timeRemaining: timeRemaining,
-            timeUsed: timeUsed,
-            completed: true,
-            testDuration: totalTestTime
-        };
-        
-        // Set cognitive data to indicate physical test was taken instead
-        const cognitiveData = {
-            stroopAccuracy: 0,
-            stroopReactionTime: 0,
-            nbackAccuracy: 0,
-            nbackReactionTime: 0,
-            overallScore: 0,
-            testTaken: false,
-            physicalTestTaken: true
-        };
-        
-        sessionData.blocks[currentBlock - 1].physicalData = physicalData;
-        sessionData.blocks[currentBlock - 1].cognitiveData = cognitiveData;
-        sessionData.blocks[currentBlock - 1].endTime = new Date().toISOString();
-        
-        // Show completion message
-        mainContent.innerHTML = `
-            <div class="physical-test-container">
-                <div class="block-title">Physical Fatigue Test Complete</div>
-                <div class="completion-message">
-                    <h3>Exercise Complete!</h3>
-                    <p>You exercised for ${Math.floor(timeUsed / 60)} minutes and ${Math.floor(timeUsed % 60)} seconds.</p>
-                    <p>Proceeding to next block...</p>
-                </div>
-            </div>
-        `;
-        
-        setTimeout(() => {
-            if (currentBlock < TOTAL_BLOCKS) {
-                showInterBlockScreen();
-            } else {
-                showCompletion();
-            }
-        }, 2000);
-    };
-    
-    // Initial display
-    updateDisplay();
-}
-
-function showInterBlockScreen() {
-    // currentBlock is currently 1 if we just finished block 1
-    mainContent.innerHTML = `
-        <div class="completion-container">
-            <div class="block-title">Block ${currentBlock} Complete</div>
-            <p>You have finished block ${currentBlock} of ${TOTAL_BLOCKS}.</p>
-            <p>Ready to start the next set?</p>
-            
-            <button class="button primary" onclick="startBlock(${currentBlock + 1})">
-                Start Block ${currentBlock + 1}
-            </button>
-        </div>
-    `;
-}
-
 function showCompletion() {
     currentStep = 'complete';
     updateProgress();
-    sessionData.endTime = new Date().toISOString();
-    
     mainContent.innerHTML = `
         <div class="completion-container">
-            <div class="block-title">Session Complete</div>
-            <p>Thank you for participating! You have completed all ${TOTAL_BLOCKS} blocks.</p>
-            <p>Your data is ready for download.</p>
-            <button class="button primary" onclick="downloadResults()">
-                Download Results (CSV)
-            </button>
-        </div>
-    `;
-}
-
-// ----- Data Export -----
-function downloadResults() {
-    const csvData = generateCSVData();
-    const blob = new Blob([csvData], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `fatigue_analysis_${sessionData.demographics.participantId || 'participant'}_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
-}
-
-function generateCSVData() {
-    const rows = [];
-    const headers = [
-        // Demographics
-        'participant_id', 'age', 'gender', 'input_device', 'dominant_hand', 'eye_correction',
-        'session_start', 'session_end',
-        // Block info
-        'block_number', 'block_start', 'block_end', 'test_type',
-        // Fitts data
-        'fitts_success_rate', 'fitts_mean_trial_time', 'fitts_mean_target_time', 'fitts_total_misclicks', 
-        'fitts_throughput', 'fitts_mean_blue_target_time', 'fitts_mean_blue_to_first_green_time', 
-        'fitts_test_duration', 'fitts_total_trials', 'fitts_successful_trials', 'fitts_terminated_trials', 
-        'fitts_trials_with_blue_clicked',
-        // NASA-TLX data
-        'nasa_mental_demand', 'nasa_physical_demand', 'nasa_temporal_demand', 
-        'nasa_performance', 'nasa_effort', 'nasa_frustration', 'nasa_overall_score',
-        // Cognitive data (0 if physical test was taken)
-        'cognitive_stroop_accuracy', 'cognitive_stroop_rt', 'cognitive_nback_accuracy', 
-        'cognitive_nback_rt', 'cognitive_overall_score',
-        // Physical test data
-        'physical_time_used', 'physical_test_duration'
-    ];
-    
-    rows.push(headers.join(','));
-    
-    for (let i = 0; i < TOTAL_BLOCKS; i++) {
-        const block = sessionData.blocks[i];
-        if (!block) continue;
-        
-        const row = [
-            // Demographics
-            sessionData.demographics.participantId || '',
-            sessionData.demographics.age || '',
-            sessionData.demographics.gender || '',
-            sessionData.demographics.inputDevice || '',
-            sessionData.demographics.dominantHand || '',
-            sessionData.demographics.eyeCorrection || '',
-            sessionData.startTime || '',
-            sessionData.endTime || '',
-            // Block info
-            block.blockNumber || '',
-            block.startTime || '',
-            block.endTime || '',
-            block.testType || '',
-            // Fitts data
-            block.fittsData?.successRate || '',
-            block.fittsData?.meanTrialTime || '',
-            block.fittsData?.meanTargetTime || '',
-            block.fittsData?.totalMisclicks || '',
-            block.fittsData?.throughput || '',
-            block.fittsData?.meanBlueTargetTime || '',
-            block.fittsData?.meanBlueToFirstGreenTime || '',
-            block.fittsData?.testDuration || '',
-            block.fittsData?.totalTrials || '',
-            block.fittsData?.successfulTrials || '',
-            block.fittsData?.terminatedTrials || '',
-            block.fittsData?.trialsWithBlueClicked || '',
-            // NASA-TLX data
-            block.nasatlxData?.mentalDemand || '',
-            block.nasatlxData?.physicalDemand || '',
-            block.nasatlxData?.temporalDemand || '',
-            block.nasatlxData?.performance || '',
-            block.nasatlxData?.effort || '',
-            block.nasatlxData?.frustration || '',
-            block.nasatlxData?.overallScore || '',
-            // Cognitive data
-            block.cognitiveData?.stroopAccuracy || '',
-            block.cognitiveData?.stroopReactionTime || '',
-            block.cognitiveData?.nbackAccuracy || '',
-            block.cognitiveData?.nbackReactionTime || '',
-            block.cognitiveData?.overallScore || '',
-            // Physical test data
-            block.physicalData?.timeUsed || '',
-            block.physicalData?.testDuration || ''
-        ];
-        
-        rows.push(row.join(','));
-    }
-    
-    return rows.join('\n');
+            <h3>Experiment Complete</h3>
+            <button class="button primary" onclick="downloadResults()">Download Final Report</button>
+        </div>`;
 }
