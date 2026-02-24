@@ -41,82 +41,90 @@ function mountNASATLX(container, onComplete) {
     container.innerHTML = `
         <div class="nasatlx-container">
             <div class="block-title">NASA-TLX Workload Assessment</div>
-            <p class="nasatlx-instruction">Please rate your experience with the previous task on a scale of 1-20:</p>
-            
-            <div id="nasatlx-warning" class="nasatlx-warning" style="display: none;">
-                <strong>⚠️ Warning:</strong> Please enter values between 1 and 20 only.
-            </div>
+            <p class="nasatlx-instruction">Please rate your experience with the previous task by adjusting the sliders below:</p>
             
             <form id="nasatlx-form">
                 ${questions.map(q => `
-                    <div class="nasatlx-question">
-                        <label class="nasatlx-label">
-                            <strong>${q.title}</strong><br>
-                            ${q.question}<br>
-                            <span class="scale-note">${q.scale}</span>
+                    <div class="nasatlx-question" style="margin-bottom: 25px; background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <label class="nasatlx-label" style="display: block; margin-bottom: 15px;">
+                            <strong style="font-size: 1.1em; color: #111827;">${q.title}</strong><br>
+                            <span style="color: #374151;">${q.question}</span><br>
+                            <span class="scale-note" style="color: #6b7280; font-size: 0.85em;">${q.scale}</span>
                         </label>
-                        <input type="number" name="${q.id}" min="1" max="20" step="1" required class="nasatlx-input" data-question-id="${q.id}">
-                        <div class="input-warning" id="warning-${q.id}" style="display: none;">
-                            Please enter a value between 1 and 20
+                        
+                        <div class="slider-wrapper" style="display: flex; align-items: center; gap: 15px;">
+                            <span style="font-weight: bold; color: #9ca3af; font-size: 0.9em;">1</span>
+                            
+                            <input type="range" name="${q.id}" min="1" max="20" step="1" value="10" 
+                                   class="nasatlx-slider" data-val-target="val-${q.id}" 
+                                   style="flex-grow: 1; cursor: pointer;">
+                                   
+                            <span style="font-weight: bold; color: #9ca3af; font-size: 0.9em;">20</span>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 10px; font-weight: 600; color: #2563eb; font-size: 1.1em;">
+                            Selected: <span id="val-${q.id}">10</span>
                         </div>
                     </div>
                 `).join('')}
                 
-                <button type="submit" class="button primary" id="submit-btn">Submit Assessment</button>
+                <button type="submit" class="button primary" id="submit-btn" style="width: 100%; margin-top: 15px; font-size: 1.1em; padding: 12px;">
+                    Submit Assessment
+                </button>
             </form>
         </div>
     `;
 
-    // Internal CSS helper to ensure warnings look right
-    if (!window.__nasatlxWarningCSS) {
+    // Modern CSS for the Sliders
+    if (!window.__nasatlxSliderCSS) {
         const style = document.createElement('style');
         style.textContent = `
-            .nasatlx-warning { background: #fef2f2; border: 2px solid #fca5a5; border-radius: 8px; padding: 1em; margin: 1em 0; color: #dc2626; font-weight: 600; text-align: center; }
-            .input-warning { color: #dc2626; font-size: 0.9em; font-weight: 500; margin-top: 0.5em; padding: 0.3em 0.5em; background: #fef2f2; border-radius: 4px; border-left: 3px solid #dc2626; }
-            .nasatlx-input.invalid { border-color: #dc2626; background-color: #fef2f2; }
-            .nasatlx-input.valid { border-color: #16a34a; background-color: #f0fdf4; }
+            .nasatlx-slider {
+                -webkit-appearance: none;
+                width: 100%;
+                height: 8px;
+                border-radius: 4px;
+                background: #d1d5db;
+                outline: none;
+            }
+            .nasatlx-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                background: #2563eb;
+                cursor: pointer;
+                transition: background .15s ease-in-out, transform .1s;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            .nasatlx-slider::-webkit-slider-thumb:hover {
+                background: #1d4ed8;
+                transform: scale(1.15);
+            }
+            .nasatlx-slider::-moz-range-thumb {
+                width: 24px;
+                height: 24px;
+                border: none;
+                border-radius: 50%;
+                background: #2563eb;
+                cursor: pointer;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
         `;
         document.head.appendChild(style);
-        window.__nasatlxWarningCSS = true;
+        window.__nasatlxSliderCSS = true;
     }
 
-    const inputs = container.querySelectorAll('.nasatlx-input');
-    const warningDiv = document.getElementById('nasatlx-warning');
-    const submitBtn = document.getElementById('submit-btn');
+    const sliders = container.querySelectorAll('.nasatlx-slider');
     const form = document.getElementById('nasatlx-form');
 
-    function validateInput(input) {
-        const value = parseFloat(input.value);
-        const questionId = input.dataset.questionId;
-        const warningElement = document.getElementById(`warning-${questionId}`);
-        if (input.value === '') {
-            input.classList.remove('invalid', 'valid');
-            warningElement.style.display = 'none';
-            return false;
-        }
-        if (isNaN(value) || value < 1 || value > 20) {
-            input.classList.add('invalid');
-            warningElement.style.display = 'block';
-            return false;
-        } else {
-            input.classList.remove('invalid');
-            input.classList.add('valid');
-            warningElement.style.display = 'none';
-            return true;
-        }
-    }
-
-    function updateSubmitButton() {
-        const allValid = Array.from(inputs).every(input => {
-            const value = parseFloat(input.value);
-            return input.value !== '' && !isNaN(value) && value >= 1 && value <= 20;
+    // Update the displayed value text instantly when the user drags the slider
+    sliders.forEach(slider => {
+        slider.addEventListener('input', (e) => {
+            const targetId = e.target.dataset.valTarget;
+            document.getElementById(targetId).textContent = e.target.value;
         });
-        submitBtn.disabled = !allValid;
-        submitBtn.style.opacity = allValid ? '1' : '0.6';
-    }
-
-    inputs.forEach(input => {
-        input.addEventListener('input', () => { validateInput(input); updateSubmitButton(); });
     });
 
     // Individual CSV Download function
@@ -138,29 +146,24 @@ function mountNASATLX(container, onComplete) {
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         
-        let allValid = true;
         const responses = {};
         let totalScore = 0;
         
-        inputs.forEach(input => {
-            if (!validateInput(input)) {
-                allValid = false;
-            } else {
-                const value = parseInt(input.value);
-                responses[input.name] = value;
-                totalScore += value;
-            }
+        // Loop through all sliders to gather their final values
+        sliders.forEach(slider => {
+            const value = parseInt(slider.value);
+            responses[slider.name] = value;
+            totalScore += value;
         });
 
-        if (!allValid) return;
-
+        // Calculate and append the overall score
         responses.overallScore = (totalScore / questions.length).toFixed(2);
         responses.timestamp = new Date().toISOString();
 
-        // Trigger immediate download before proceeding
+        // Trigger immediate download
         downloadNASACSV(responses);
 
-        // Move to the next step in main.js
+        // Move to the next step
         onComplete(responses);
     });
 }

@@ -1,13 +1,14 @@
 function mountFittsTest(container, onComplete) {
-    // --- Test & Visual Parameters ---
+    // --- Test Parameters ---
     let completedMinutes = 0;
-    const TOTAL_MINUTES_NEEDED = 10;
+    const TOTAL_MINUTES_NEEDED = 10; 
     let animationActive = false;
-    let trialActive = false; // Primary interaction gate
+    let trialActive = false; 
+    
+    // Timer set back to 60 seconds (1 minute)
     const TEST_DURATION = 60 * 1000; 
     let testStartTime = 0;
     
-    const BLOCKS = 1, TRIALS_PER_BLOCK = 999, TOTAL_TRIALS = BLOCKS * TRIALS_PER_BLOCK;
     let participantId = "P" + Math.floor(Math.random() * 100000);
     
     const ARENA_W = 700, ARENA_H = 500;
@@ -15,7 +16,7 @@ function mountFittsTest(container, onComplete) {
     const COLOR_TARGET = "#107046", COLOR_TARGET_BORDER = "#03422c";
     const DIALOG_TIMEOUT = 1000;
 
-    let paused = false, pauseOverlay = null, pauseAccum = 0;
+    let paused = false, pauseOverlay = null;
     let trialIdx = 0, trialData = [];
     let currentTrial = null;
     let animationFrame = null;
@@ -32,9 +33,7 @@ function mountFittsTest(container, onComplete) {
     let greenTargetsClicked = 0;
     let misclickCount = 0;
     let trialStartTime = 0;
-    let greenClickTimes = [];
 
-    // --- Helper: Popup ---
     function showPopupNotification(msg, anchorIdOrElem) {
         let arena = typeof anchorIdOrElem === "string" ? document.getElementById(anchorIdOrElem) : anchorIdOrElem;
         if (!arena || !msg) return;
@@ -50,7 +49,6 @@ function mountFittsTest(container, onComplete) {
         setTimeout(() => { note.style.opacity = "0"; setTimeout(() => note.remove(), 350); }, DIALOG_TIMEOUT);
     }
 
-    // --- Core Logic ---
     showInstructions();
 
     function showInstructions() {
@@ -58,7 +56,8 @@ function mountFittsTest(container, onComplete) {
             <div class="fitts-instructions">
                 <div class="block-title">Fatigue Induction Test (Minute ${completedMinutes + 1})</div>
                 <div class="instruction-content">
-                    <p>Click the <strong>highlighted green target</strong>. Complete as many sets as possible in 1 minute.</p>
+                    <p>Click the <strong>highlighted green target</strong>. The targets will jump across the circle unpredictably.</p>
+                    <p>Complete as many sets as possible in <strong>1 minute</strong>.</p>
                     <button class="button primary" onclick="startFittsTest()">Start Minute</button>
                 </div>
             </div>`;
@@ -66,19 +65,21 @@ function mountFittsTest(container, onComplete) {
     }
 
     function startTest() {
-        testStartTime = performance.now();
+        testStartTime = 0; // Wait for first click
         trialIdx = 0;
         trialData = [];
         misclickCount = 0;
         showTestInterface();
 
         globalTimer = setInterval(() => {
-            const elapsed = performance.now() - testStartTime;
-            updateProgress(elapsed);
-            if (elapsed >= TEST_DURATION) {
-                clearInterval(globalTimer);
-                globalTimer = null;
-                endTest();
+            if (testStartTime > 0) { 
+                const elapsed = performance.now() - testStartTime;
+                updateProgress(elapsed);
+                if (elapsed >= TEST_DURATION) {
+                    clearInterval(globalTimer);
+                    globalTimer = null;
+                    endTest();
+                }
             }
         }, 100);
 
@@ -90,7 +91,7 @@ function mountFittsTest(container, onComplete) {
             <div class="fitts-test-container">
                 <div id="fitts-feedback">Time left: 60s</div>
                 <div id="fitts-progbar"><div id="fitts-prog" style="width: 0%"></div></div>
-                <div id="fitts-arena" style="position:relative; width:${ARENA_W}px; height:${ARENA_H}px; border:1px solid #ccc; margin:auto;"></div>
+                <div id="fitts-arena" style="position:relative; width:${ARENA_W}px; height:${ARENA_H}px; border:1px solid #ccc; margin:auto; background: #fff; cursor: crosshair;"></div>
                 <div class="test-controls">
                     <button id="pause-btn" class="button secondary" onclick="togglePause()">Pause</button>
                     <div class="trial-info"><span id="misclick-counter">Misclicks: 0/${MAX_MISCLICKS}</span></div>
@@ -100,7 +101,6 @@ function mountFittsTest(container, onComplete) {
         document.getElementById('fitts-arena').addEventListener('click', handleArenaClick);
     }
 
-    // --- CLICK HANDLER ---
     function handleArenaClick(event) {
         if (paused || !currentTrial || !trialActive) return;
 
@@ -114,11 +114,26 @@ function mountFittsTest(container, onComplete) {
         const dist = Math.sqrt(Math.pow(clickX - target.x, 2) + Math.pow(clickY - target.y, 2));
 
         if (dist <= target.radius) {
-            // HIT
+            // Start the 60-second timer on the very first click
+            if (testStartTime === 0) {
+                testStartTime = performance.now();
+                animationActive = true;
+                animateTargets();
+            }
+
+            // Calculate exact Euclidean distance for Fitts' ID
+            if (currentTrial.lastTarget) {
+                const dx = target.x - currentTrial.lastTarget.x;
+                const dy = target.y - currentTrial.lastTarget.y;
+                const exactDistance = Math.sqrt(dx * dx + dy * dy);
+                const moveID = Math.log2((exactDistance / currentTrial.targetSize) + 1);
+                currentTrial.sumOfID += moveID;
+            }
+            currentTrial.lastTarget = target;
+
             target.clicked = true;
             target.isHighlighted = false;
             greenTargetsClicked++;
-            greenClickTimes.push(performance.now() - trialStartTime);
             currentTrial.currentIndexInSequence++;
 
             if (currentTrial.currentIndexInSequence < currentTrial.sequence.length) {
@@ -130,11 +145,12 @@ function mountFittsTest(container, onComplete) {
             }
             renderCircularArena();
         } else {
-            // MISS
-            misclickCount++;
-            updateMisclickCounter();
-            if (misclickCount > MAX_MISCLICKS) {
-                handleHardStop("Limit Exceeded!");
+            if (testStartTime > 0) {
+                misclickCount++;
+                updateMisclickCounter();
+                if (misclickCount > MAX_MISCLICKS) {
+                    handleHardStop("Limit Exceeded!");
+                }
             }
         }
     }
@@ -149,7 +165,8 @@ function mountFittsTest(container, onComplete) {
                 position: 'absolute', width: `${target.radius * 2}px`, height: `${target.radius * 2}px`,
                 left: `${target.x - target.radius}px`, top: `${target.y - target.radius}px`,
                 borderRadius: '50%', background: target.isHighlighted ? COLOR_TARGET : "#d1d5db",
-                opacity: target.isHighlighted ? "1.0" : "0.15", pointerEvents: 'none'
+                opacity: target.isHighlighted ? "1.0" : "0.15", pointerEvents: 'none',
+                border: target.isHighlighted ? `2px solid ${COLOR_TARGET_BORDER}` : 'none'
             });
             arena.appendChild(el);
         });
@@ -157,13 +174,18 @@ function mountFittsTest(container, onComplete) {
 
     function nextTrial() {
         initializeTrial();
-        trialActive = true; // RE-ENABLE CLICKING
+        trialActive = true; 
         trialStartTime = performance.now();
-        animationActive = true;
-        animateTargets();
+        
+        if (!animationActive && testStartTime > 0) {
+            animationActive = true;
+            animateTargets();
+        }
     }
 
     function initializeTrial() {
+        greenTargetsClicked = 0;
+        
         const randomLevel = Math.floor(Math.random() * 5) + 1;
         const config = LEVELS[randomLevel];
         const numTargets = 11;
@@ -176,28 +198,66 @@ function mountFittsTest(container, onComplete) {
             targets.push({ id: i, x: centerX + Math.cos(angle) * circleRadius, y: centerY + Math.sin(angle) * circleRadius, radius: config.size / 2, isHighlighted: false });
         }
 
-        let sequence = Array.from({length: numTargets}, (_, i) => i);
-        for (let i = sequence.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
+        // --- Smart random jumps with short-term memory (Crash-Proof) ---
+        let sequence = [];
+        let currentIdx = Math.floor(Math.random() * numTargets); 
+        sequence.push(currentIdx);
+
+        for (let i = 1; i < numTargets; i++) {
+            const possibleJumps = [4, 5, 6, 7]; // Large sweeping jumps
+            let validNextTargets = [];
+
+            // Test each possible jump
+            for (let jump of possibleJumps) {
+                let candidateIdx = (currentIdx + jump) % numTargets;
+                let recentlyVisited = sequence.slice(-3); // Get up to the last 3 targets visited
+                
+                if (!recentlyVisited.includes(candidateIdx)) {
+                    validNextTargets.push(candidateIdx);
+                }
+            }
+
+            // Failsafe to guarantee it never freezes
+            if (validNextTargets.length === 0) {
+                currentIdx = (currentIdx + 5) % numTargets; 
+            } else {
+                currentIdx = validNextTargets[Math.floor(Math.random() * validNextTargets.length)];
+            }
+            
+            sequence.push(currentIdx);
         }
+
         targets[sequence[0]].isHighlighted = true;
-        currentTrial = { targets, sequence, currentIndexInSequence: 0, level: randomLevel, targetSize: config.size, targetDistance: config.distance };
+        
+        currentTrial = { 
+            targets, 
+            sequence, 
+            currentIndexInSequence: 0, 
+            level: randomLevel, 
+            targetSize: config.size, 
+            targetDistance: config.distance,
+            sumOfID: 0,
+            lastTarget: null
+        };
+        
         renderCircularArena();
     }
 
     function animateTargets() {
         if (!animationActive || paused || !currentTrial) return;
-        const elapsed = performance.now() - testStartTime;
-        const remaining = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
+        const elapsed = testStartTime > 0 ? performance.now() - testStartTime : 0;
+        const remaining = Math.max(0, Math.ceil((TEST_DURATION - elapsed) / 1000));
         const fb = document.getElementById('fitts-feedback');
         if (fb) fb.textContent = `Time left: ${remaining}s - Target ${currentTrial.currentIndexInSequence + 1}/11`;
-        animationFrame = requestAnimationFrame(animateTargets);
+        
+        if (elapsed < TEST_DURATION) {
+            animationFrame = requestAnimationFrame(animateTargets);
+        }
     }
 
     function updateProgress(elapsed) {
         const prog = document.getElementById('fitts-prog');
-        if (prog) prog.style.width = `${Math.min(100, (elapsed / 60000) * 100)}%`;
+        if (prog) prog.style.width = `${Math.min(100, (elapsed / TEST_DURATION) * 100)}%`;
     }
 
     function updateMisclickCounter() {
@@ -215,28 +275,59 @@ function mountFittsTest(container, onComplete) {
     }
 
     function completeTrialSuccess() {
-        trialActive = false; // Disable until nextTrial initializes
+        trialActive = false; 
         const totalTime = performance.now() - trialStartTime;
-        recordTrial(true, totalTime);
+        recordTrial(true, totalTime, 11);
         showPopupNotification("Set Complete!", document.getElementById('fitts-arena'));
         trialIdx++;
-        setTimeout(() => { if (performance.now() - testStartTime < TEST_DURATION) nextTrial(); }, 150);
+        
+        setTimeout(() => { 
+            if (testStartTime > 0 && (performance.now() - testStartTime) < TEST_DURATION) {
+                nextTrial(); 
+            }
+        }, 150);
     }
 
-    function recordTrial(success, time) {
-        const ID = Math.log2((currentTrial.targetDistance / currentTrial.targetSize) + 1);
-        const throughput = ((ID * 11) / (time / 1000)).toFixed(4);
-        trialData.push({ participantId, block: currentBlock, trialInBlock: trialIdx + 1, difficultyLevel: currentTrial.level, indexOfDifficulty: ID.toFixed(4), totalTime_ms: time.toFixed(2), throughput_bps: throughput, misclicks: misclickCount, success, timestamp: Date.now() });
+    function recordTrial(success, time, clickedCount) {
+        if (clickedCount <= 1) return; 
+
+        const totalID = currentTrial.sumOfID;
+        const moves = clickedCount - 1; 
+        const avgID = (totalID / moves).toFixed(4);
+        const throughput = (totalID / (time / 1000)).toFixed(4);
+
+        trialData.push({ 
+            participantId, 
+            block: 1, 
+            trialInBlock: trialIdx + 1, 
+            difficultyLevel: currentTrial.level, 
+            indexOfDifficulty: avgID, 
+            targetsClicked: clickedCount,
+            totalTime_ms: time.toFixed(2), 
+            throughput_bps: throughput, 
+            misclicks: misclickCount, 
+            success, 
+            timestamp: Date.now() 
+        });
     }
 
     function endTest() {
         animationActive = false;
+        trialActive = false;
         if (globalTimer) { clearInterval(globalTimer); globalTimer = null; }
+        if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = null; }
+        
         const arena = document.getElementById('fitts-arena');
         if (arena) arena.innerHTML = "";
 
+        // Save whatever progress they made if the timer ran out mid-set
+        if (greenTargetsClicked > 1 && currentTrial) {
+            const timeSpent = performance.now() - trialStartTime;
+            recordTrial(false, timeSpent, greenTargetsClicked);
+        }
+
         completedMinutes++;
-        downloadCSV(trialData, `block_${currentBlock}_set_${completedMinutes}`);
+        downloadCSV(trialData, `block_1_minute_${completedMinutes}`);
         trialData = []; 
 
         if (completedMinutes < TOTAL_MINUTES_NEEDED) {
@@ -249,7 +340,7 @@ function mountFittsTest(container, onComplete) {
     function showNextSetScreen() {
         container.innerHTML = `
             <div class="fitts-results">
-                <div class="block-title">Set ${completedMinutes}/${TOTAL_MINUTES_NEEDED} Complete</div>
+                <div class="block-title">Minute ${completedMinutes}/${TOTAL_MINUTES_NEEDED} Complete</div>
                 <p>Data downloaded. Take a breath.</p>
                 <button class="button primary" onclick="startNextMinute()">Start Next Minute</button>
             </div>`;
@@ -272,8 +363,8 @@ function mountFittsTest(container, onComplete) {
 
     function downloadCSV(data, fileName) {
         if (!data.length) return;
-        const headers = "participantId,block,setIndex,trialInSet,difficultyLevel,indexOfDifficulty,totalTime_ms,throughput_bps,misclicks,success,timestamp";
-        const rows = data.map(r => `${r.participantId},${r.block},${completedMinutes},${r.trialInBlock},${r.difficultyLevel},${r.indexOfDifficulty},${r.totalTime_ms},${r.throughput_bps},${r.misclicks},${r.success},${r.timestamp}`).join("\n");
+        const headers = "participantId,block,setIndex,trialInSet,difficultyLevel,avgIndexOfDifficulty,targetsClicked,totalTime_ms,throughput_bps,misclicks,success,timestamp";
+        const rows = data.map(r => `${r.participantId},${r.block},${completedMinutes},${r.trialInBlock},${r.difficultyLevel},${r.indexOfDifficulty},${r.targetsClicked},${r.totalTime_ms},${r.throughput_bps},${r.misclicks},${r.success},${r.timestamp}`).join("\n");
         const blob = new Blob([headers + "\n" + rows], { type: "text/csv" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
